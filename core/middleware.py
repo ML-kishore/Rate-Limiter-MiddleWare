@@ -15,9 +15,6 @@ def rate_limiter_middleware(get_response):
         if not ip:
             return JsonResponse({"message" : "IP ADDRESS NOT VALID"},status=400)
         
-        response = get_response(request)
-        if hasattr(response, 'render') and callable(response.render):
-            response.render()
         print(f"IP ADDRESS : {ip}")
 
         now = time.time()
@@ -34,7 +31,7 @@ def rate_limiter_middleware(get_response):
 
         #3.checking the valid length
 
-        if len(usage_data[ip]) >= 5:
+        if len(usage_data[ip]) >= limit:
             return JsonResponse({"limit_exceeded" : f"Try again after sometime {int((window_size) - (now - usage_data[ip][0]))} seconds"},status=429)
         
         
