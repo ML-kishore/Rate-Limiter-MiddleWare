@@ -2,50 +2,58 @@ from rest_framework.response import Response
 from rest_framework import status
 import time
 from django.http import JsonResponse
-
-
-usage_data = {}
+from datetime import timedelta
+from django.utils import timezone
+from .models import RequestLogs
+import math
 
 def rate_limiter_middleware(get_response):
-    
-    print('Middleware is Running.... ✅')
+
+    print('MiddleWare is running .... ✅')
     def wrapper(request):
-        print('Rate limiter started .... 📊')
+        print('Rate Limiter Started ....📊')
         ip = request.META.get('HTTP_X_FORWARDED_FOR') or request.META.get('REMOTE_ADDR')
+        now = timezone.now()
+        window_size =  now - timedelta(minutes=1)
+        limit_rate = 5
+
+        #checking if ip is valid
         if not ip:
-            return JsonResponse({"message" : "IP ADDRESS NOT VALID"},status=400)
+            return JsonResponse({"message" : "Invalid IP Address"},status=400)
+
+        #1.removing later logs 
+        older_requestlogs = RequestLogs.objects.filter(timestamp__lt = window_size).delete()
+
+        #2.counting new logs 
+
+        count_last_window_logs = RequestLogs.objects.filter(
+            ip = ip,
+            timestamp__gt= window_size
+        ).count()
+
+        #3.filtering limit rate
+
+        newer_requests = RequestLogs.objects.filter(ip=ip,timestamp__gt = window_size)
         
-        print(f"IP ADDRESS : {ip}")
-
-        now = time.time()
-        #1.initializing usage_data
-        if ip not in usage_data:
-            usage_data[ip] = []
-
-        window_size = 60
-        limit = 5
-
-        #2.appending request hitting time
-
-        usage_data[ip] = [t for t in usage_data[ip] if (now - t) < window_size ]
-
-        #3.checking the valid length
-
-        if len(usage_data[ip]) >= limit:
-            return JsonResponse({"limit_exceeded" : f"Try again after sometime {int((window_size) - (now - usage_data[ip][0]))} seconds"},status=429)
+        if count_last_window_logs >= limit_rate:
+            target_time = newer_requests[0].timestamp
+            duration = target_time + timedelta(seconds=60)
+            actual_duration = duration - now
+            return JsonResponse({"limit_exceeded" : f"Try Again after {int(actual_duration.total_seconds())} seconds"},status=429)
         
-        
-        
-        usage_data[ip].append(now)
+        #4.newer requests adding
+
+        RequestLogs.objects.create(ip=ip)
+
+        #5.hitting view
 
         response = get_response(request)
-        if hasattr(response, 'render') and callable(response.render):
-            response.render()
-
         return response
     
     return wrapper
-        
+
+
+
 
 
         
